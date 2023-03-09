@@ -9,7 +9,10 @@ import Text.ParserCombinators.Parsec.Token
 import Control.Applicative (some)
 
 miniHaskellDef :: LanguageDef st
-miniHaskellDef = undefined
+miniHaskellDef = haskellStyle {
+                                reservedOpNames= ["\\", "->", "=",":="],
+                                reservedNames  = ["let", "letrec", "in"]
+                              }
 
 miniHs :: TokenParser st
 miniHs = makeTokenParser miniHaskellDef
@@ -21,32 +24,74 @@ testParse p s
       Right a -> a
 
 var :: Parser Var
-var = undefined
+var = do
+  name <- identifier miniHs
+  return (Var name)
 -- >>> testParse var "b is a var"
 -- Var {getVar = "b"}
 
 varExp :: Parser ComplexExp
-varExp = undefined
+varExp = do
+    name <- identifier miniHs
+    return (CX (Var name))
 -- >>> testParse varExp "b is a var"
 -- CX (Var {getVar = "b"})
 
 lambdaExp :: Parser ComplexExp
-lambdaExp = undefined
+lambdaExp = do
+            _ <- reservedOp miniHs "\\"
+            inLmabda <- identifier miniHs
+            spaces
+            _ <- reservedOp miniHs "->"
+            spaces
+            outLambda <- expr
+            return (CLam (Var inLmabda) (outLambda))
 -- >>> testParse lambdaExp "\\x -> x"
 -- CLam (Var {getVar = "x"}) (CX (Var {getVar = "x"}))
 
 letExp :: Parser ComplexExp
-letExp = undefined
+letExp = do
+            _ <- reserved miniHs "let"
+            spaces
+            x <- identifier miniHs
+            spaces
+            _ <- reservedOp miniHs ":="
+            spaces
+            y <- expr
+            spaces
+            _ <- reserved miniHs "in"
+            spaces
+            z <- expr
+
+            return (Let (Var x) (y) (z))
 -- >>> testParse letExp "let x := y in z"
 -- Let (Var {getVar = "x"}) (CX (Var {getVar = "y"})) (CX (Var {getVar = "z"}))
 
 letrecExp :: Parser ComplexExp
-letrecExp = undefined
+letrecExp = do
+            _ <- reserved miniHs "letrec"
+            spaces
+            x <- identifier miniHs
+            spaces
+            _ <- reservedOp miniHs ":="
+            spaces
+            y <- expr
+            spaces
+            _ <- reserved miniHs "in"
+            spaces
+            z <- expr
+
+            return (LetRec (Var x) (y) (z))
 -- >>> testParse letrecExp "letrec x := y in z"
 -- LetRec (Var {getVar = "x"}) (CX (Var {getVar = "y"})) (CX (Var {getVar = "z"}))
 
 listExp :: Parser ComplexExp
-listExp = undefined
+listExp = do
+            _ <- reservedOp miniHs "["
+            vals <- sepBy (identifier miniHs) (char ',')
+            _ <- reserved miniHs "]"
+            return (List (map CX (map Var vals)))
+
 -- >>> testParse listExp "[a,b,c]"
 -- List [CX (Var {getVar = "a"}),CX (Var {getVar = "b"}),CX (Var {getVar = "c"})]
 

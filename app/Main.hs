@@ -8,7 +8,8 @@ import Exp
 import Parsing
 import Printing
 import REPLCommand
+import Lib
 
 main :: IO ()
-main = undefined
+main = someFunc
 

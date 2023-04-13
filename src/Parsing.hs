@@ -2,116 +2,106 @@
 module Parsing where
 
 import Exp
-import Text.ParserCombinators.Parsec
-import Text.ParserCombinators.Parsec.Language
-    ( haskellStyle, LanguageDef )
-import Text.ParserCombinators.Parsec.Token
-import Control.Applicative (some)
+import Lab2
+import Control.Applicative (some, many, (<|>))
+import Data.Char (isAlpha, isAlphaNum)
 
-miniHaskellDef :: LanguageDef st
-miniHaskellDef = haskellStyle {
-                                reservedOpNames= ["\\", "->", "=",":=","+"],
-                                reservedNames  = ["let", "letrec", "in"]
-                              }
+parseFirst :: Parser a -> String -> Maybe a
+parseFirst p s
+  = case apply p s of
+      [] -> Nothing
+      (a,_):_ -> Just a
 
-miniHs :: TokenParser st
-miniHs = makeTokenParser miniHaskellDef
+haskellId :: Parser String
+haskellId = identifier (satisfy isAlpha) (satisfy isAlphaNum)
 
-testParse :: Parser a -> String -> a
-testParse p s
-  = case parse p "<input>" s of
-      Left err -> error (show err)
-      Right a -> a
+haskellOp :: Parser String
+haskellOp = identifier opSymbol opSymbol
+  where
+    opSymbol = satisfy isOp
+    isOp = (`elem` "`~!@#$%^&*_+=|:<>.?/")
 
 var :: Parser Var
-var = do
-  name <- identifier miniHs
-  return (Var name)
--- >>> testParse var "b is a var"
--- Var {getVar = "b"}
+var = Var <$> (haskellId <|> haskellOp)
+-- >>> parseFirst var "b is a var"
+-- Just (Var {getVar = "b"})
 
 varExp :: Parser ComplexExp
-varExp = do
-    varr <- var
-    return (CX varr)
--- >>> testParse varExp "b is a var"
--- CX (Var {getVar = "b"})
+varExp = CX <$> var
+-- >>> parseFirst varExp "b is a var"
+-- Just (CX (Var {getVar = "b"}))
 
 lambdaExp :: Parser ComplexExp
-lambdaExp = do
-            _ <- reservedOp miniHs "\\"
-            inLmabda <- var
-            _ <- reservedOp miniHs "->"
-            outLambda <- expr
-            return (CLam inLmabda (outLambda))
--- >>> testParse lambdaExp "\\x -> x"
--- CLam (Var {getVar = "x"}) (CX (Var {getVar = "x"}))
+lambdaExp
+  = do
+    symbol "\\"
+    x <- var
+    symbol "->"
+    e <- expr
+    return $ CLam x e 
+-- >>> parseFirst lambdaExp "\\x -> x"
+-- Just (CLam (Var {getVar = "x"}) (CX (Var {getVar = "x"})))
 
 letExp :: Parser ComplexExp
-letExp = do
-            _ <- reserved miniHs "let"
-            x <- var
-            _ <- reservedOp miniHs ":="
-            y <- expr
-            _ <- reserved miniHs "in"
-            z <- expr
-            return (Let x y z)
--- >>> testParse letExp "let x := y in z"
--- Let (Var {getVar = "x"}) (CX (Var {getVar = "y"})) (CX (Var {getVar = "z"}))
+letExp
+  = do
+    symbol "let"
+    x <- var
+    symbol ":="
+    ex <- expr
+    symbol "in"
+    e <- expr
+    return $ Let x ex e
+-- >>> parseFirst letExp "let x := y in z"
+-- Just (Let (Var {getVar = "x"}) (CX (Var {getVar = "y"})) (CX (Var {getVar = "z"})))
 
 letrecExp :: Parser ComplexExp
-letrecExp = do
-            _ <- reserved miniHs "letrec"
-            x <- var
-            _ <- reservedOp miniHs ":="
-            y <- expr
-            _ <- reserved miniHs "in"
-            z <- expr
-            return (LetRec x y z)
--- >>> testParse letrecExp "letrec x := y in z"
--- LetRec (Var {getVar = "x"}) (CX (Var {getVar = "y"})) (CX (Var {getVar = "z"}))
-listExp :: Parser ComplexExp
-listExp = do
-  exprs <- brackets miniHs (commaSep miniHs expr)
-  return (List exprs)
+letrecExp
+  = do
+    symbol "letrec"
+    x <- var
+    symbol ":="
+    ex <- expr
+    symbol "in"
+    e <- expr
+    return $ LetRec x ex e
+-- >>> parseFirst letrecExp "letrec x := y in z"
+-- Just (LetRec (Var {getVar = "x"}) (CX (Var {getVar = "y"})) (CX (Var {getVar = "z"})))
 
--- >>> testParse listExp "[a,b,c]"
--- List [CX (Var {getVar = "a"}),CX (Var {getVar = "b"}),CX (Var {getVar = "c"})]
+listExp :: Parser ComplexExp
+listExp = List <$> brackets (commaSep expr)
+-- >>> parseFirst listExp "[a,b,c]"
+-- Just (List [CX (Var {getVar = "a"}),CX (Var {getVar = "b"}),CX (Var {getVar = "c"})])
 
 natExp :: Parser ComplexExp
-natExp = do
-          val <- natural miniHs
-          return (Nat (fromIntegral val))
--- >>> testParse natExp "223 a"
--- Nat 223
+natExp = Nat . fromIntegral <$> natural 
+-- >>> parseFirst natExp "223 a"
+-- Just (Nat 223)
 
 parenExp :: Parser ComplexExp
-parenExp = do
-          val <- parens miniHs expr
-          return val
--- >>> testParse parenExp "(a)"
--- CX (Var {getVar = "a"})
-
-opExp :: Parser ComplexExp
-opExp = do
-          _ <- reservedOp miniHs "+"
-          return (CX (Var "+"))
+parenExp = parens expr
+-- >>> parseFirst parenExp "(a)"
+-- Just (CX (Var {getVar = "a"}))
 
 basicExp :: Parser ComplexExp
-basicExp = varExp <|> lambdaExp <|> letExp <|> letrecExp <|> listExp <|> natExp <|> parenExp <|> opExp
--- >>> testParse basicExp "[a,b,c]" 
--- List [CX (Var {getVar = "a"}),CX (Var {getVar = "b"}),CX (Var {getVar = "c"})]
+basicExp
+  = letrecExp
+  <|> letExp
+  <|> lambdaExp
+  <|> listExp
+  <|> parenExp
+  <|> natExp
+  <|> varExp
+-- >>> parseFirst basicExp "[a,b,c]"
+-- Just (List [CX (Var {getVar = "a"}),CX (Var {getVar = "b"}),CX (Var {getVar = "c"})])
 
 expr :: Parser ComplexExp
-expr = do
-          exps <- some basicExp
-          return (foldl1 CApp exps)
-
--- >>> testParse expr "\\x -> [x,y,z]"
--- CLam (Var {getVar = "x"}) (List [CX (Var {getVar = "x"}),CX (Var {getVar = "y"}),CX (Var {getVar = "z"})])
+expr = foldl1 CApp <$> some basicExp
+-- >>> parseFirst expr "\\x -> x y z t"
+-- Just (CLam (Var {getVar = "x"}) (CApp (CApp (CApp (CX (Var {getVar = "x"})) (CX (Var {getVar = "y"}))) (CX (Var {getVar = "z"}))) (CX (Var {getVar = "t"}))))
 
 exprParser :: Parser ComplexExp
-exprParser = whiteSpace miniHs *> expr <* eof
--- >>> testParse exprParser "let x := 28 in \\y -> + x y"
--- Let (Var {getVar = "x"}) (Nat 28) (CLam (Var {getVar = "y"}) (CApp (CApp (CX (Var {getVar = "+"})) (CX (Var {getVar = "x"}))) (CX (Var {getVar = "y"}))))
+exprParser = whiteSpace *> expr <* endOfInput
+-- >>> parseFirst exprParser "let x := 28 in \\y -> + x y"
+-- Just (Let (Var {getVar = "x"}) (Nat 28) (CLam (Var {getVar = "y"}) (CApp (CApp (CX (Var {getVar = "+"})) (CX (Var {getVar = "x"}))) (CX (Var {getVar = "y"})))))
 

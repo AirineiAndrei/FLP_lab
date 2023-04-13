@@ -25,11 +25,15 @@ source-repository head
 
 library
   exposed-modules:
+      Eval
       Exp
+      Lab2
       Lib
       Parsing
       Printing
+      Program
       REPLCommand
+      Sugar
   other-modules:
       Paths_FLPlab
   hs-source-dirs:

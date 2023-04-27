@@ -10,3 +10,6 @@ bool f t b := b f t ;
 
 ite b t e := bool e t b ;
 
+&& x y := ite x y false ;
+|| x y := ite x true y ;
+not x := ite x false true ;

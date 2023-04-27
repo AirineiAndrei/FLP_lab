@@ -4,7 +4,7 @@ import Exp
 import Lab2 ( Parser, endOfInput, whiteSpace, reserved, semiSep1,semi )
 import Parsing ( expr, var, parseFirst )
 import Sugar ( desugarExp, desugarVar )
-import Eval ( substitute )
+import Eval ( substitute , normalize)
 
 import Control.Applicative ( Alternative(..) )
 import System.IO ( stderr, hPutStrLn )
@@ -59,5 +59,13 @@ programEnv :: [Definition] -> Environment
 programEnv pgm = Map.fromList (zip (map desugarVar(map defHead pgm)) (map desugarExp (map definitionExp pgm)))
 
 normalizeEnv :: Environment -> Exp -> Exp
-normalizeEnv env exp = exp 
+normalizeEnv env exp  = maybe exp (normalizeEnv env) (step exp)
+  where
+    step (X x) = Map.lookup x env
+    step (Lam x e) = Lam x <$> step e
+    step (App (Lam x ex) e) = Just (substitute x e ex)
+    step (App e1 e2)
+      = case step e1 of
+        Nothing -> App e1 <$> step e2
+        Just e1' -> Just (App e1' e2)
 
